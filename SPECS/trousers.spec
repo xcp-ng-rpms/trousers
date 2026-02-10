@@ -1,21 +1,26 @@
 Name: trousers
 Summary: TCG's Software Stack v1.2
-Version: 0.3.14
-Release: 2%{?dist}
+Version: 0.3.15
+Release: 1%{?dist}
 License: BSD
 Group: System Environment/Libraries
 Url: http://trousers.sourceforge.net
+
 Source0: http://downloads.sourceforge.net/%{name}/%{name}-%{version}.tar.gz
 Source1: tcsd.service
-BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
-BuildRequires: libtool, openssl-devel
-BuildRequires: systemd-units
+Patch1: trousers-0.3.14-noinline.patch
+# submitted upstream https://sourceforge.net/p/trousers/mailman/message/35766729/
+Patch2: trousers-0.3.14-unlock-in-err-path.patch
+Patch3: trousers-0.3.14-fix-indent-obj_policy.patch
+Patch4: trousers-0.3.14-fix-indent-tspi_key.patch
+
+BuildRequires: libtool openssl-devel gettext-devel autoconf automake
+BuildRequires: systemd
 Requires(pre): shadow-utils
 Requires(post): systemd-units
 Requires(preun): systemd-units
 Requires(postun): systemd-units
-# submitted upstream https://sourceforge.net/p/trousers/mailman/message/35766729/
-Patch0001: unlock-in-err-path.patch
+Requires: %{name}-lib%{?_isa} = %{version}-%{release}
 
 %description
 TrouSerS is an implementation of the Trusted Computing Group's Software Stack
@@ -24,10 +29,19 @@ of your TPM hardware. TPM hardware can create, store and use RSA keys
 securely (without ever being exposed in memory), verify a platform's software
 state using cryptographic hashes and more.
 
+%package lib
+Summary: TrouSerS libtspi library
+Group: Development/Libraries
+# Needed obsoletes due to the -lib subpackage split
+Obsoletes: trousers < 0.3.13-4
+
+%description lib
+The libtspi library for use in Trusted Computing enabled applications.
+
 %package static
 Summary: TrouSerS TCG Device Driver Library
 Group: Development/Libraries
-Requires: %{name}-devel = %{version}-%{release}
+Requires: %{name}-devel%{?_isa} = %{version}-%{release}
 
 %description static
 The TCG Device Driver Library (TDDL) used by the TrouSerS tcsd as the
@@ -38,96 +52,149 @@ https://www.trustedcomputinggroup.org/specs/TSS.
 %package devel
 Summary: TrouSerS header files and documentation
 Group: Development/Libraries
-Requires: %{name} = %{version}-%{release}
+Requires: %{name}-lib%{?_isa} = %{version}-%{release}
 
 %description devel
 Header files and man pages for use in creating Trusted Computing enabled
 applications.
 
 %prep
-%setup -cq
-%patch1 -p1
-
+%autosetup -p1
+# fix man page paths
 sed -i -e 's|/var/tpm|/var/lib/tpm|g' -e 's|/usr/local/var|/var|g' man/man5/tcsd.conf.5.in man/man8/tcsd.8.in
 
 %build
-# fix man page paths
+chmod +x ./bootstrap.sh
+./bootstrap.sh
 %configure --with-gui=openssl
 make -k %{?_smp_mflags}
 
 %install
-rm -rf ${RPM_BUILD_ROOT}
 mkdir -p ${RPM_BUILD_ROOT}/%{_localstatedir}/lib/tpm
 make install DESTDIR=${RPM_BUILD_ROOT} INSTALL="install -p"
 rm -f ${RPM_BUILD_ROOT}/%{_libdir}/libtspi.la
 mkdir -p $RPM_BUILD_ROOT%{_unitdir}
 install -m 0644 %{SOURCE1} $RPM_BUILD_ROOT%{_unitdir}/
 
-%clean
-rm -rf ${RPM_BUILD_ROOT}
-
 %pre
-getent group tss >/dev/null || groupadd -g 59 -r tss
-getent passwd tss >/dev/null || \
-useradd -r -u 59 -g tss -d /dev/null -s /sbin/nologin \
- -c "Account used by the trousers package to sandbox the tcsd daemon" tss
+getent group tss >/dev/null || groupadd -f -g 59 -r tss
+if ! getent passwd tss >/dev/null ; then
+    if ! getent passwd 59 >/dev/null ; then
+      useradd -r -u 59 -g tss -d /dev/null -s /sbin/nologin -c "Account used for TPM access" tss
+    else
+      useradd -r -g tss -d /dev/null -s /sbin/nologin -c "Account used for TPM access" tss
+    fi
+fi
 exit 0
 
 %post
 %systemd_post tcsd.service
-/sbin/ldconfig
 
 %preun
 %systemd_preun tcsd.service
 
 %postun
 %systemd_postun_with_restart tcsd.service 
-/sbin/ldconfig
+
+%post lib -p /sbin/ldconfig
+
+%postun lib -p /sbin/ldconfig
 
 %files
-%defattr(-, root, root, -)
-%doc README LICENSE ChangeLog
+%doc README ChangeLog
 %{_sbindir}/tcsd
-%{_libdir}/libtspi.so.?
-%{_libdir}/libtspi.so.?.?.?
-%config(noreplace) %attr(0600, tss, tss) %{_sysconfdir}/tcsd.conf
-%doc %{_mandir}/man5/*
-%doc %{_mandir}/man8/*
+%config(noreplace) %attr(0640, root, tss) %{_sysconfdir}/tcsd.conf
+%{_mandir}/man5/*
+%{_mandir}/man8/*
 %attr(644,root,root) %{_unitdir}/tcsd.service
 %attr(0700, tss, tss) %{_localstatedir}/lib/tpm/
 
+%files lib
+%license LICENSE
+%{_libdir}/libtspi.so.?
+%{_libdir}/libtspi.so.?.?.?
+
 %files devel
 # The files to be used by developers, 'trousers-devel'
-%defattr(-, root, root, -)
 %doc doc/LTC-TSS_LLD_08_r2.pdf doc/TSS_programming_SNAFUs.txt
 %attr(0755, root, root) %{_libdir}/libtspi.so
 %{_includedir}/tss/
 %{_includedir}/trousers/
-%doc %{_mandir}/man3/Tspi_*
+%{_mandir}/man3/Tspi_*
 
 %files static
-%defattr(-, root, root, -)
 # The only static library shipped by trousers, the TDDL
 %{_libdir}/libtddl.a
 
 %changelog
-* Mon Apr 03 2017 Jerry Snitselaar <jsnitsel@redhat.com> 0.3.14-2
-- release mutex in err path for obj_context_set_machine_name
+* Fri Nov 06 2020 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.15-1
+- Rebase to 0.3.15
+- Fix CVE-2020-24330 CVE-2020-24331 CVE-2020-24332
+resolves: rhbz#1725782 rhbz#1877517 rhbz#1882402 rhbz#1882414
 
-* Thu Mar 30 2017 Jerry Snitselaar <jsnitsel@redhat.com> 0.3.14-1
-Resolves: rhbz#1384446 Rebase Trousers to latest version
+* Wed Jun 05 2019 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.14-4
+- Fix annocheck warnings
+resolves: rhbz#1624181
 
-* Sun May 24 2015 Avesh Agarwal <avagarwa@redhat.com> 0.3.13-1
-Resolves: rhbz#1173221 New upstream bug fix release
+* Mon May 27 2019 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.14-3
+- Add initial CI gating support
+- Fix covscan reported issues
+resolves: rhbz#1602719
 
-* Fri Jan 24 2014 Daniel Mach <dmach@redhat.com> - 0.3.11.2-3
-- Mass rebuild 2014-01-24
+* Fri Aug 10 2018 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.14-2
+- release mutex in error path for obj_context_set_machine_name
+resolves: rhbz#1614915
 
-* Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 0.3.11.2-2
-- Mass rebuild 2013-12-27
+* Wed Aug 01 2018 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.14-1
+- Rebase to 3.14 release
+resolves: rhbz#1614915
+
+* Mon Jul 23 2018 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.13-11
+- Rebuild with correct source checksum.
+
+* Fri Feb 09 2018 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.13-10
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_28_Mass_Rebuild
+
+* Thu Aug 03 2017 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.13-9
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_27_Binutils_Mass_Rebuild
+
+* Thu Jul 27 2017 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.13-8
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_27_Mass_Rebuild
+
+* Tue Feb  7 2017 Peter Robinson <pbrobinson@fedoraproject.org> 0.3.13-7
+- Add patch for OpenSSL 1.1
+
+* Fri Feb 05 2016 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.13-6
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_24_Mass_Rebuild
+
+* Fri Jun 19 2015 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 0.3.13-5
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_23_Mass_Rebuild
+
+* Tue May 26 2015 Tomáš Mráz <tmraz@redhat.com> 0.3.13-4
+- Split libtspi to a trousers-lib subpackage (#1225062)
+- Fix FTBFS with current gcc (drop inline keyword when bogus)
+
+* Mon Aug 18 2014 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 0.3.13-3
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_21_22_Mass_Rebuild
+
+* Sun Jun 08 2014 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 0.3.13-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_21_Mass_Rebuild
+
+* Thu May 15 2014 Steve Grubb <sgrubb@redhat.com> 0.3.13-1
+- New upstream bug fix release
+
+* Tue Mar 18 2014 Steve Grubb <sgrubb@redhat.com> 0.3.11.2-3
+- Fix crash when linking libgnutls and libmysqlclient (#1069079)
+- Don't order tcsd after syslog.target (#1055198)
+
+* Thu Feb 13 2014 Peter Robinson <pbrobinson@fedoraproject.org> 0.3.11.2-2
+- Minor spec cleanups
 
 * Mon Aug 19 2013 Steve Grubb <sgrubb@redhat.com> 0.3.11.2-1
 - New upstream bug fix and license change release
+
+* Sun Aug 04 2013 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 0.3.10-4
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_20_Mass_Rebuild
 
 * Sun Jun 02 2013 Steve Grubb <sgrubb@redhat.com> 0.3.10-3
 - Remove +x bit from service file (#963916)
