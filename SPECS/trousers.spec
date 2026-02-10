@@ -1,25 +1,28 @@
 Name: trousers
 Summary: TCG's Software Stack v1.2
 Version: 0.3.15
-Release: 1%{?dist}
+Release: 11%{?dist}
 License: BSD
-Group: System Environment/Libraries
 Url: http://trousers.sourceforge.net
 
 Source0: http://downloads.sourceforge.net/%{name}/%{name}-%{version}.tar.gz
 Source1: tcsd.service
-Patch1: trousers-0.3.14-noinline.patch
-# submitted upstream https://sourceforge.net/p/trousers/mailman/message/35766729/
+Patch1:  trousers-0.3.14-noinline.patch
+# submitted upstream
 Patch2: trousers-0.3.14-unlock-in-err-path.patch
 Patch3: trousers-0.3.14-fix-indent-obj_policy.patch
 Patch4: trousers-0.3.14-fix-indent-tspi_key.patch
 
+BuildRequires: make
 BuildRequires: libtool openssl-devel gettext-devel autoconf automake
 BuildRequires: systemd
 Requires(pre): shadow-utils
+# remove systemd dependency for flatpak builds
+%if ! 0%{?flatpak}
 Requires(post): systemd-units
 Requires(preun): systemd-units
 Requires(postun): systemd-units
+%endif
 Requires: %{name}-lib%{?_isa} = %{version}-%{release}
 
 %description
@@ -31,7 +34,6 @@ state using cryptographic hashes and more.
 
 %package lib
 Summary: TrouSerS libtspi library
-Group: Development/Libraries
 # Needed obsoletes due to the -lib subpackage split
 Obsoletes: trousers < 0.3.13-4
 
@@ -40,7 +42,6 @@ The libtspi library for use in Trusted Computing enabled applications.
 
 %package static
 Summary: TrouSerS TCG Device Driver Library
-Group: Development/Libraries
 Requires: %{name}-devel%{?_isa} = %{version}-%{release}
 
 %description static
@@ -51,7 +52,6 @@ https://www.trustedcomputinggroup.org/specs/TSS.
 
 %package devel
 Summary: TrouSerS header files and documentation
-Group: Development/Libraries
 Requires: %{name}-lib%{?_isa} = %{version}-%{release}
 
 %description devel
@@ -70,11 +70,11 @@ chmod +x ./bootstrap.sh
 make -k %{?_smp_mflags}
 
 %install
-mkdir -p ${RPM_BUILD_ROOT}/%{_localstatedir}/lib/tpm
-make install DESTDIR=${RPM_BUILD_ROOT} INSTALL="install -p"
-rm -f ${RPM_BUILD_ROOT}/%{_libdir}/libtspi.la
-mkdir -p $RPM_BUILD_ROOT%{_unitdir}
-install -m 0644 %{SOURCE1} $RPM_BUILD_ROOT%{_unitdir}/
+mkdir -p %{buildroot}%{_localstatedir}/lib/tpm
+%make_install
+find %{buildroot} -type f -name '*.la' -print -delete
+mkdir -p %{buildroot}%{_unitdir}
+install -Dpm0644 %{SOURCE1} %{buildroot}%{_unitdir}/
 
 %pre
 getent group tss >/dev/null || groupadd -f -g 59 -r tss
@@ -96,10 +96,6 @@ exit 0
 %postun
 %systemd_postun_with_restart tcsd.service 
 
-%post lib -p /sbin/ldconfig
-
-%postun lib -p /sbin/ldconfig
-
 %files
 %doc README ChangeLog
 %{_sbindir}/tcsd
@@ -111,8 +107,7 @@ exit 0
 
 %files lib
 %license LICENSE
-%{_libdir}/libtspi.so.?
-%{_libdir}/libtspi.so.?.?.?
+%{_libdir}/libtspi.so.1*
 
 %files devel
 # The files to be used by developers, 'trousers-devel'
@@ -127,30 +122,65 @@ exit 0
 %{_libdir}/libtddl.a
 
 %changelog
+* Sat Jul 20 2024 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.15-11
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_41_Mass_Rebuild
+
+* Sat Jan 27 2024 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.15-10
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_40_Mass_Rebuild
+
+* Sat Jul 22 2023 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.15-9
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_39_Mass_Rebuild
+
+* Sat Jan 21 2023 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.15-8
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_38_Mass_Rebuild
+
+* Sat Jul 23 2022 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.15-7
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_37_Mass_Rebuild
+
+* Sat Jan 22 2022 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.15-6
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_36_Mass_Rebuild
+
+* Tue Sep 14 2021 Sahana Prasad <sahana@redhat.com> - 0.3.15-5
+- Rebuilt with OpenSSL 3.0.0
+
+* Fri Jul 23 2021 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.15-4
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_35_Mass_Rebuild
+
+* Tue Mar 02 2021 Zbigniew Jędrzejewski-Szmek <zbyszek@in.waw.pl> - 0.3.15-3
+- Rebuilt for updated systemd-rpm-macros
+  See https://pagure.io/fesco/issue/2583.
+
+* Wed Jan 27 2021 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.15-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_34_Mass_Rebuild
+
 * Fri Nov 06 2020 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.15-1
-- Rebase to 0.3.15
-- Fix CVE-2020-24330 CVE-2020-24331 CVE-2020-24332
-resolves: rhbz#1725782 rhbz#1877517 rhbz#1882402 rhbz#1882414
+- Rebase to 0.3.15 release.
 
-* Wed Jun 05 2019 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.14-4
-- Fix annocheck warnings
-resolves: rhbz#1624181
+* Thu Oct 29 2020 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.14-4
+- Fix for CVE-2020-24330 (RHBZ#1874824)
+- Fix for CVE-2020-24331 (RHBZ#1870057)
+- Fix for CVE-2020-24332 (RHBZ#1870053)
 
-* Mon May 27 2019 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.14-3
-- Add initial CI gating support
-- Fix covscan reported issues
-resolves: rhbz#1602719
+* Tue Sep 15 2020 Peter Robinson <pbrobinson@fedoraproject.org> - 0.3.14-3
+- Update user creation to latest guidelines
 
-* Fri Aug 10 2018 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.14-2
-- release mutex in error path for obj_context_set_machine_name
-resolves: rhbz#1614915
+* Wed Jul 29 2020 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.14-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_33_Mass_Rebuild
 
-* Wed Aug 01 2018 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.14-1
-- Rebase to 3.14 release
-resolves: rhbz#1614915
+* Wed Mar 18 2020 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.14-1
+- Rebase to 0.3.14 release
 
-* Mon Jul 23 2018 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.13-11
-- Rebuild with correct source checksum.
+* Fri Jan 31 2020 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.13-14
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_32_Mass_Rebuild
+
+* Sat Jul 27 2019 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.13-13
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_31_Mass_Rebuild
+
+* Sun Feb 03 2019 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.13-12
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_30_Mass_Rebuild
+
+* Sat Jul 14 2018 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.13-11
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_29_Mass_Rebuild
 
 * Fri Feb 09 2018 Fedora Release Engineering <releng@fedoraproject.org> - 0.3.13-10
 - Rebuilt for https://fedoraproject.org/wiki/Fedora_28_Mass_Rebuild
