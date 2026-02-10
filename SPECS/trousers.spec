@@ -1,7 +1,7 @@
 Name: trousers
 Summary: TCG's Software Stack v1.2
 Version: 0.3.15
-Release: 1%{?dist}
+Release: 2%{?dist}
 License: BSD
 Group: System Environment/Libraries
 Url: http://trousers.sourceforge.net
@@ -80,9 +80,9 @@ install -m 0644 %{SOURCE1} $RPM_BUILD_ROOT%{_unitdir}/
 getent group tss >/dev/null || groupadd -f -g 59 -r tss
 if ! getent passwd tss >/dev/null ; then
     if ! getent passwd 59 >/dev/null ; then
-      useradd -r -u 59 -g tss -d /dev/null -s /sbin/nologin -c "Account used for TPM access" tss
+      useradd -r -u 59 -g tss -d / -s /sbin/nologin -c "Account used for TPM access" tss
     else
-      useradd -r -g tss -d /dev/null -s /sbin/nologin -c "Account used for TPM access" tss
+      useradd -r -g tss -d / -s /sbin/nologin -c "Account used for TPM access" tss
     fi
 fi
 exit 0
@@ -127,6 +127,10 @@ exit 0
 %{_libdir}/libtddl.a
 
 %changelog
+* Wed Oct 18 2023 Štěpán Horáček <shoracek@redhat.com> - 0.3.15-2
+- Fix home directory of the tss user
+  Resolves: RHEL-9099
+
 * Fri Nov 06 2020 Jerry Snitselaar <jsnitsel@redhat.com> - 0.3.15-1
 - Rebase to 0.3.15
 - Fix CVE-2020-24330 CVE-2020-24331 CVE-2020-24332
